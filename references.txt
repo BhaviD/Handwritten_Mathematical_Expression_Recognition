@@ -1,0 +1,6 @@
+Watcher References
+1.Bound function - For Weight initialisation.
+https://datascience.stackexchange.com/questions/10926/how-to-deep-neural-network-weight-initialization
+2.FAN in - FAN out 
+https://www.researchgate.net/post/What_do_fan_in_and_fan_out_mean_in_deeplearningtoolbox_of_CNN
+
