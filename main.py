@@ -17,3 +17,9 @@ def bound(self, nin, nout, kernel):
     result = (6. / (fin + fout)
     result = np.sqrt(result)
     return result
+
+rng = np.random.RandomState(int(time.time()))
+
+def norm_weight(fan_in, fan_out):
+    W_bound = np.sqrt(6.0 / (fan_in + fan_out))
+    return np.asarray(rng.uniform(low=-W_bound, high=W_bound, size=(fan_in, fan_out)), dtype=np.float32)
