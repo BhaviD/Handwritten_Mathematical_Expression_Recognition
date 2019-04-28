@@ -108,6 +108,36 @@ class Watcher_train():
         mask_x = mask_x[:, 0::2, 0::2]
         return x,dense_out,mask_x
 
+class Attender():
+    def __init__(self, channels,                                # output of Watcher | [batch, h, w, channels]
+                dim_decoder, dim_attend):                       # decoder hidden state:$h_{t-1}$ | [batch, dec_dim]
+
+        self.channels = channels
+
+        self.coverage_kernel = [11,11]                          # kernel size of $Q$
+        self.coverage_filters = dim_attend                      # filter numbers of $Q$ | 512
+
+        self.dim_decoder = dim_decoder                          # 256
+        self.dim_attend = dim_attend                            # unified dim of three parts calculating $e_ti$ i.e.
+                                                                # $Q*beta_t$, $U_a * a_i$, $W_a x h_{t-1}$ | 512
+
+        self.U_f = tf.Variable(norm_weight(self.coverage_filters, self.dim_attend), name='U_f') # $U_f x f_i$ | [cov_filters, dim_attend]
+        self.U_f_b = tf.Variable(np.zeros((self.dim_attend,)).astype('float32'), name='U_f_b')  # $U_f x f_i + U_f_b$ | [dim_attend, ]
+
+        self.U_a = tf.Variable(norm_weight(self.channels,
+            self.dim_attend), name='U_a')                                                      # $U_a x a_i$ | [annotatin_channels, dim_attend]
+        self.U_a_b = tf.Variable(np.zeros((self.dim_attend,)).astype('float32'), name='U_a_b') # $U_a x a_i + U_a_b$ | [dim_attend, ]
+
+        self.W_a = tf.Variable(norm_weight(self.dim_decoder,
+            self.dim_attend), name='W_a')                                                      # $W_a x h_{t_1}$ | [dec_dim, dim_attend]
+        self.W_a_b = tf.Variable(np.zeros((self.dim_attend,)).astype('float32'), name='W_a_b') # $W_a x h_{t-1} + W_a_b$ | [dim_attend, ]
+
+        self.V_a = tf.Variable(norm_weight(self.dim_attend, 1), name='V_a')                    # $V_a x tanh(A + B + C)$ | [dim_attend, 1]
+        self.V_a_b = tf.Variable(np.zeros((1,)).astype('float32'), name='V_a_b')               # $V_a x tanh(A + B + C) + V_a_b$ | [1, ]
+
+        self.alpha_past_filter = tf.Variable(conv_norm_weight(1, self.dim_attend, self.coverage_kernel), name='alpha_past_filter')
+
+
 class WAP():
     def __init__(self, watcher, attender, parser, hidden_dim, word_dim, context_dim, target_dim, training):
         # self.batch_size = batch_size
