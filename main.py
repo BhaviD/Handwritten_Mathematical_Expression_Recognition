@@ -11,6 +11,15 @@ rng = np.random.RandomState(int(time.time()))
 def norm_weight(fan_in, fan_out):
     W_bound = np.sqrt(6.0 / (fan_in + fan_out))
     return np.asarray(rng.uniform(low=-W_bound, high=W_bound, size=(fan_in, fan_out)), dtype=np.float32)
+
+def conv_norm_weight(nin, nout, kernel_size):
+    filter_shape = (kernel_size[0], kernel_size[1], nin, nout)
+    fan_in = kernel_size[0] * kernel_size[1] * nin
+    fan_out = kernel_size[0] * kernel_size[1] * nout
+    W_bound = np.sqrt(6. / (fan_in + fan_out))
+    W = np.asarray(rng.uniform(low=-W_bound, high=W_bound, size=filter_shape), dtype=np.float32)
+    return W.astype('float32')
+
 class Watcher_train():
     def __init__(self, blocks,             # number of dense blocks
                 level,                     # number of levels in each blocks
