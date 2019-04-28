@@ -54,3 +54,16 @@ class Watcher_train():
         self.dense_channels += self.input_conv_filters
         dense_out = x
         return mask_x , dense_out
+    
+    def bottleneck(self,x):
+        ##---------------------Bottleneck layer to improve computational efficiency,i.e.,to reduce the input to 4k feature maps.(k=24)------------------##
+        #### [1, 1] convolution part for bottleneck ####
+        filter_size = [1,1]
+        limit = self.bound(self.dense_channels, 4 * self.growth_rate, filter_size)
+        x = tf.layers.conv2d(x, filters=4 * self.growth_rate, kernel_size=filter_size,
+            strides=1, padding='VALID', data_format='channels_last', use_bias=False, kernel_initializer=tf.random_uniform_initializer(-limit, limit, dtype=tf.float32))
+        x = tf.layers.batch_normalization(inputs=x,  training=self.training, momentum=0.9, scale=True, gamma_initializer=tf.random_uniform_initializer(-1.0/math.sqrt(4 * self.growth_rate),
+            1.0/math.sqrt(4 * self.growth_rate), dtype=tf.float32), epsilon=0.0001)
+        x = tf.nn.relu(x)
+        x = tf.layers.dropout(inputs=x, rate=self.dropout_rate, training=self.training)
+        return x
