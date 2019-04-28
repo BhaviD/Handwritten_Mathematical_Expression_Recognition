@@ -11,6 +11,8 @@ rng = np.random.RandomState(int(time.time()))
 def norm_weight(fan_in, fan_out):
     W_bound = np.sqrt(6.0 / (fan_in + fan_out))
     return np.asarray(rng.uniform(low=-W_bound, high=W_bound, size=(fan_in, fan_out)), dtype=np.float32)
+
+
 class Watcher_train():
     def __init__(self, blocks,             # number of dense blocks
                 level,                     # number of levels in each blocks
@@ -73,3 +75,28 @@ class Watcher_train():
         x = tf.nn.relu(x)
         x = tf.layers.dropout(inputs=x, rate=self.dropout_rate, training=self.training)
         return x
+    
+    def convolution_layer_in_DenseB(self,x):
+        #### [3, 3] filter for regular convolution layer
+        filter_size = [3,3]
+        limit = self.bound(4 * self.growth_rate, self.growth_rate,filter_size )
+        x = tf.layers.conv2d(x, filters=self.growth_rate, kernel_size=filter_size,
+            strides=1, padding='SAME', data_format='channels_last', use_bias=False, kernel_initializer=tf.random_uniform_initializer(-limit, limit, dtype=tf.float32))
+        return x
+      
+    def transition_layer(self,x,mask_x):
+        ####There is no transition layer after last DenseB layer,so this module is not run for the last block.####
+        compressed_channels = int(self.dense_channels * self.transition)
+        #### new dense channels for new dense block ####
+        self.dense_channels = compressed_channels
+        limit = self.bound(self.dense_channels, compressed_channels, [1,1])
+        x = tf.layers.conv2d(x, filters=compressed_channels, kernel_size=[1,1],
+            strides=1, padding='VALID', data_format='channels_last', use_bias=False, kernel_initializer=tf.random_uniform_initializer(-limit, limit, dtype=tf.float32))
+        x = tf.layers.batch_normalization(x, training=self.training, momentum=0.9, scale=True, gamma_initializer=tf.random_uniform_initializer(-1.0/math.sqrt(self.dense_channels),
+                1.0/math.sqrt(self.dense_channels), dtype=tf.float32), epsilon=0.0001)
+        x = tf.nn.relu(x)
+        x = tf.layers.dropout(inputs=x, rate=self.dropout_rate, training=self.training)
+        x = tf.layers.average_pooling2d(inputs=x, pool_size=[2,2], strides=2, padding='SAME')
+        dense_out = x
+        mask_x = mask_x[:, 0::2, 0::2]
+        return x,dense_out,mask_x
