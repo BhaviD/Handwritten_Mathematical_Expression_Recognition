@@ -107,3 +107,32 @@ class Watcher_train():
         dense_out = x
         mask_x = mask_x[:, 0::2, 0::2]
         return x,dense_out,mask_x
+
+    def DenseB_and_transition_layer(self,x,mask_x,dense_out):
+        #### flowing into dense blocks and transition_layer ####
+        for i in range(self.blocks):
+            for j in range(self.level):
+                ##----------------------------------------------------------DenseB Layer---------------------------------------------------------------------------##
+                #### Bottleneck layer ####
+                x = self.bottleneck(x)
+                #### 3x3 Convolution Layer ####
+                x = self.convolution_layer_in_DenseB(x)
+                #### Batch Normalisation Layer ####
+                x = tf.layers.batch_normalization(inputs=x, training=self.training, momentum=0.9, scale=True, gamma_initializer=tf.random_uniform_initializer(-1.0/math.sqrt(self.growth_rate),
+                    1.0/math.sqrt(self.growth_rate), dtype=tf.float32), epsilon=0.0001)
+                #### Relu Activation Layer ####
+                x = tf.nn.relu(x)
+                x = tf.layers.dropout(inputs=x, rate=self.dropout_rate, training=self.training)
+                dense_out = tf.concat([dense_out, x], axis=3)
+                x = dense_out
+                #### calculate the filter number of dense block's output ####
+                self.dense_channels += self.growth_rate
+
+            if i < self.blocks - 1:
+                ##---------------------------------------------------------Transition Layer------------------------------------------------------------------------##
+                x,dense_out,mask_x = self.transition_layer(x,mask_x)
+
+        return mask_x ,dense_out
+      
+      
+
