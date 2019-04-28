@@ -107,3 +107,28 @@ class Watcher_train():
         dense_out = x
         mask_x = mask_x[:, 0::2, 0::2]
         return x,dense_out,mask_x
+
+class WAP():
+	def __init__(self, watcher, attender, parser, hidden_dim, word_dim, context_dim, target_dim, training):
+
+		#self.batch_size = batch_size
+		self.hidden_dim = hidden_dim
+		self.word_dim = word_dim
+		self.context_dim = context_dim
+		self.target_dim = target_dim
+		self.embed_matrix = tf.Variable(norm_weight(self.target_dim, self.word_dim), name='embed')
+
+		self.watcher = watcher
+		self.attender = attender
+		self.parser = parser
+		self.Wa2h = tf.Variable(norm_weight(self.context_dim, self.hidden_dim), name='Wa2h')
+		self.ba2h = tf.Variable(np.zeros((self.hidden_dim,)).astype('float32'), name='ba2h')
+		self.Wc = tf.Variable(norm_weight(self.context_dim, self.word_dim), name='Wc')
+		self.bc = tf.Variable(np.zeros((self.word_dim,)).astype('float32'), name='bc')
+		self.Wh = tf.Variable(norm_weight(self.hidden_dim, self.word_dim), name='Wh')
+		self.bh = tf.Variable(np.zeros((self.word_dim,)).astype('float32'), name='bh')
+		self.Wy = tf.Variable(norm_weight(self.word_dim, self.word_dim), name='Wy')
+		self.by = tf.Variable(np.zeros((self.word_dim,)).astype('float32'), name='by')
+		self.Wo = tf.Variable(norm_weight(self.word_dim//2, self.target_dim), name='Wo')
+		self.bo = tf.Variable(np.zeros((self.target_dim,)).astype('float32'), name='bo')
+		self.training = training
