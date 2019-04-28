@@ -192,65 +192,104 @@ class WAP():
 
     def get_word(self, sample_y, sample_h_pre, alpha_past_pre, sample_annotation):
 
-		emb = tf.cond(sample_y[0] < 0,
-			lambda: tf.fill((1, self.word_dim), 0.0),
-			lambda: tf.nn.embedding_lookup(wap.embed_matrix, sample_y)
-			)
+        emb = tf.cond(sample_y[0] < 0,
+            lambda: tf.fill((1, self.word_dim), 0.0),
+            lambda: tf.nn.embedding_lookup(wap.embed_matrix, sample_y)
+            )
 
-		#ret = self.parser.one_time_step((h_pre, None, None, alpha_past_pre, annotation, None), (emb, None))
-		emb_y_z_r_vector = tf.tensordot(emb, self.parser.W_yz_yr, axes=1) + \
-		self.parser.b_yz_yr                                            # [batch, 2 * dim_decoder]
-		hidden_z_r_vector = tf.tensordot(sample_h_pre,
-		self.parser.U_hz_hr, axes=1)                                   # [batch, 2 * dim_decoder]
-		pre_z_r_vector = tf.sigmoid(emb_y_z_r_vector + \
-		hidden_z_r_vector)                                             # [batch, 2 * dim_decoder]
+        #ret = self.parser.one_time_step((h_pre, None, None, alpha_past_pre, annotation, None), (emb, None))
+        emb_y_z_r_vector = tf.tensordot(emb, self.parser.W_yz_yr, axes=1) + \
+        self.parser.b_yz_yr                                            # [batch, 2 * dim_decoder]
+        hidden_z_r_vector = tf.tensordot(sample_h_pre,
+        self.parser.U_hz_hr, axes=1)                                   # [batch, 2 * dim_decoder]
+        pre_z_r_vector = tf.sigmoid(emb_y_z_r_vector + \
+        hidden_z_r_vector)                                             # [batch, 2 * dim_decoder]
 
-		r1 = pre_z_r_vector[:, :self.parser.hidden_dim]                # [batch, dim_decoder]
-		z1 = pre_z_r_vector[:, self.parser.hidden_dim:]                # [batch, dim_decoder]
+        r1 = pre_z_r_vector[:, :self.parser.hidden_dim]                # [batch, dim_decoder]
+        z1 = pre_z_r_vector[:, self.parser.hidden_dim:]                # [batch, dim_decoder]
 
-		emb_y_h_vector = tf.tensordot(emb, self.parser.W_yh, axes=1) + \
-		self.parser.b_yh                                               # [batch, dim_decoder]
-		hidden_r_h_vector = tf.tensordot(sample_h_pre,
-		self.parser.U_rh, axes=1)                                      # [batch, dim_decoder]
-		hidden_r_h_vector *= r1
-		pre_h_proposal = tf.tanh(hidden_r_h_vector + emb_y_h_vector)
+        emb_y_h_vector = tf.tensordot(emb, self.parser.W_yh, axes=1) + \
+        self.parser.b_yh                                               # [batch, dim_decoder]
+        hidden_r_h_vector = tf.tensordot(sample_h_pre,
+        self.parser.U_rh, axes=1)                                      # [batch, dim_decoder]
+        hidden_r_h_vector *= r1
+        pre_h_proposal = tf.tanh(hidden_r_h_vector + emb_y_h_vector)
 
-		pre_h = z1 * sample_h_pre + (1. - z1) * pre_h_proposal
+        pre_h = z1 * sample_h_pre + (1. - z1) * pre_h_proposal
 
-		context, _, alpha_past = self.parser.attender.get_context(sample_annotation, pre_h, alpha_past_pre, None)  # [batch, dim_ctx]
-		emb_y_z_r_nl_vector = tf.tensordot(pre_h, self.parser.U_hz_hr_nl, axes=1) + self.parser.b_hz_hr_nl
-		context_z_r_vector = tf.tensordot(context, self.parser.W_c_z_r, axes=1)
-		z_r_vector = tf.sigmoid(emb_y_z_r_nl_vector + context_z_r_vector)
+        context, _, alpha_past = self.parser.attender.get_context(sample_annotation, pre_h, alpha_past_pre, None)  # [batch, dim_ctx]
+        emb_y_z_r_nl_vector = tf.tensordot(pre_h, self.parser.U_hz_hr_nl, axes=1) + self.parser.b_hz_hr_nl
+        context_z_r_vector = tf.tensordot(context, self.parser.W_c_z_r, axes=1)
+        z_r_vector = tf.sigmoid(emb_y_z_r_nl_vector + context_z_r_vector)
 
-		r2 = z_r_vector[:, :self.parser.hidden_dim]
-		z2 = z_r_vector[:, self.parser.hidden_dim:]
+        r2 = z_r_vector[:, :self.parser.hidden_dim]
+        z2 = z_r_vector[:, self.parser.hidden_dim:]
 
-		emb_y_h_nl_vector = tf.tensordot(pre_h, self.parser.U_rh_nl, axes=1) + self.parser.b_rh_nl
-		emb_y_h_nl_vector *= r2
-		context_h_vector = tf.tensordot(context, self.parser.W_c_h_nl, axes=1)
-		h_proposal = tf.tanh(emb_y_h_nl_vector + context_h_vector)
-		h = z2 * pre_h + (1. - z2) * h_proposal
+        emb_y_h_nl_vector = tf.tensordot(pre_h, self.parser.U_rh_nl, axes=1) + self.parser.b_rh_nl
+        emb_y_h_nl_vector *= r2
+        context_h_vector = tf.tensordot(context, self.parser.W_c_h_nl, axes=1)
+        h_proposal = tf.tanh(emb_y_h_nl_vector + context_h_vector)
+        h = z2 * pre_h + (1. - z2) * h_proposal
 
-		h_t = h
-		c_t = context
-		alpha_past_t = alpha_past
-		y_t_1 = emb
-		logit_gru = tf.tensordot(h_t, self.Wh, axes=1) + self.bh
-		logit_ctx = tf.tensordot(c_t, self.Wc, axes=1) + self.bc
-		logit_pre = tf.tensordot(y_t_1, self.Wy, axes=1) + self.by
-		logit = logit_pre + logit_ctx + logit_gru   # batch x word_dim
+        h_t = h
+        c_t = context
+        alpha_past_t = alpha_past
+        y_t_1 = emb
+        logit_gru = tf.tensordot(h_t, self.Wh, axes=1) + self.bh
+        logit_ctx = tf.tensordot(c_t, self.Wc, axes=1) + self.bc
+        logit_pre = tf.tensordot(y_t_1, self.Wy, axes=1) + self.by
+        logit = logit_pre + logit_ctx + logit_gru   # batch x word_dim
 
-		shape = tf.shape(logit)
-		logit = tf.reshape(logit, [-1, shape[1]//2, 2])
-		logit = tf.reduce_max(logit, axis=2)
+        shape = tf.shape(logit)
+        logit = tf.reshape(logit, [-1, shape[1]//2, 2])
+        logit = tf.reduce_max(logit, axis=2)
 
-		logit = tf.layers.dropout(inputs=logit, rate=0.2, training=self.training)
+        logit = tf.layers.dropout(inputs=logit, rate=0.2, training=self.training)
 
-		logit = tf.tensordot(logit, self.Wo, axes=1) + self.bo
+        logit = tf.tensordot(logit, self.Wo, axes=1) + self.bo
 
-		next_probs = tf.nn.softmax(logits=logit)
-		next_word  = tf.reduce_max(tf.multinomial(next_probs, num_samples=1), axis=1)
-		return next_probs, next_word, h_t, alpha_past_t
+        next_probs = tf.nn.softmax(logits=logit)
+        next_word  = tf.reduce_max(tf.multinomial(next_probs, num_samples=1), axis=1)
+        return next_probs, next_word, h_t, alpha_past_t
 
+    def get_cost(self, cost_annotation, cost_y, a_m, y_m):
+        timesteps = tf.shape(cost_y)[0]
+        batch_size = tf.shape(cost_y)[1]
+        emb_y = tf.nn.embedding_lookup(self.embed_matrix, tf.reshape(cost_y, [-1]))
+        emb_y = tf.reshape(emb_y, [timesteps, batch_size, self.word_dim])
+        emb_pad = tf.fill((1, batch_size, self.word_dim), 0.0)
+        emb_shift = tf.concat([emb_pad ,tf.strided_slice(emb_y, [0, 0, 0], [-1, batch_size, self.word_dim], [1, 1, 1])], axis=0)
+        new_emb_y = emb_shift
+        anno_mean = tf.reduce_sum(cost_annotation * a_m[:, :, :, None], axis=[1, 2]) / tf.reduce_sum(a_m, axis=[1, 2])[:, None]
+        h_0 = tf.tensordot(anno_mean, self.Wa2h, axes=1) + self.ba2h  # [batch, hidden_dim]
+        h_0 = tf.tanh(h_0)
+
+        ret = self.parser.get_ht_ctx(new_emb_y, h_0, cost_annotation, a_m, y_m)
+        h_t = ret[0]                      # h_t of all timesteps [timesteps, batch, word_dim]
+        c_t = ret[1]                      # c_t of all timesteps [timesteps, batch, context_dim]
+
+        y_t_1 = new_emb_y                 # shifted y | [1:] = [:-1]
+        logit_gru = tf.tensordot(h_t, self.Wh, axes=1) + self.bh
+        logit_ctx = tf.tensordot(c_t, self.Wc, axes=1) + self.bc
+        logit_pre = tf.tensordot(y_t_1, self.Wy, axes=1) + self.by
+        logit = logit_pre + logit_ctx + logit_gru
+        shape = tf.shape(logit)
+        logit = tf.reshape(logit, [shape[0], -1, shape[2]//2, 2])
+        logit = tf.reduce_max(logit, axis=3)
+
+        logit = tf.layers.dropout(inputs=logit, rate=0.2, training=self.training)
+
+        logit = tf.tensordot(logit, self.Wo, axes=1) + self.bo
+        logit_shape = tf.shape(logit)
+        logit = tf.reshape(logit, [-1,
+            logit_shape[2]])
+        cost = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logit, labels=tf.one_hot(tf.reshape(cost_y, [-1]),
+            depth=self.target_dim))
+
+        cost = tf.multiply(cost, tf.reshape(y_m, [-1]))
+        cost = tf.reshape(cost, [shape[0], shape[1]])
+        cost = tf.reduce_sum(cost, axis=0)
+        cost = tf.reduce_mean(cost)
+        return cost
 
 # wap_obj = WAP(None,None,None,1,1,1,1,False)
