@@ -1,10 +1,18 @@
 import tensorflow as tf
+from tensorflow.contrib.layers import batch_norm
+from tensorflow.contrib.framework import arg_scope
 import numpy as np
 import numpy
+from data import dataIterator, load_dict, prepare_data
+import random
 import sys
+import copy
+import re
 import os
 import time
 import math
+import ipdb
+import argparse
 
 rng = np.random.RandomState(int(time.time()))
 
@@ -215,7 +223,7 @@ class Attender():
 
 class WAP():
     def __init__(self, watcher, attender, parser, hidden_dim, word_dim, context_dim, target_dim, training):
-        # self.batch_size = batch_size
+        #self.batch_size = batch_size
         self.hidden_dim = hidden_dim
         self.word_dim = word_dim
         self.context_dim = context_dim
@@ -241,7 +249,7 @@ class WAP():
 
         emb = tf.cond(sample_y[0] < 0,
             lambda: tf.fill((1, self.word_dim), 0.0),
-            lambda: tf.nn.embedding_lookup(wap.embed_matrix, sample_y)
+            lambda: tf.nn.embedding_lookup(self.embed_matrix, sample_y)
             )
 
         #ret = self.parser.one_time_step((h_pre, None, None, alpha_past_pre, annotation, None), (emb, None))
@@ -340,7 +348,7 @@ class WAP():
         return cost
 
 
-    def get_sample(self, p, w, h, alpha, ctx0, h_0, k , maxlen, stochastic, session, training):
+    def get_sample(self, anno, infer_y, h_pre, alpha_past, if_trainning, p, w, h, alpha, ctx0, h_0, k , maxlen, stochastic, session, training):
 
         sample = []
         sample_score = []
