@@ -513,3 +513,13 @@ def main(args):
         maxlen=100, maxImagesize=400000)
 
     print('train length is ', len(train))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path", default=".")
+    parser.add_argument("--batch_size", type=int, default=6)
+    (args, unknown) = parser.parse_known_args()
+    device_name = "/gpu:0"
+    with tf.device(device_name):
+        main(args)

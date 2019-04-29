@@ -4,8 +4,8 @@ import pickle as pkl
 import gzip
 
 
-def dataIterator(feature_file,label_file,dictionary,batch_size,batch_Imagesize,maxlen,maxImagesize):
-    
+def dataIterator(feature_file, label_file, dictionary, batch_size, batch_Imagesize, maxlen, maxImagesize):
+
     fp=open(feature_file,'rb')
     features=pkl.load(fp)
     fp.close()
