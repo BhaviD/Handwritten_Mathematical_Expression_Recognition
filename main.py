@@ -496,6 +496,34 @@ class Parser():
 
         return res
 
+    def one_time_step(self, tuple_h0_ctx_alpha_alpha_past_annotation, tuple_emb_mask):
+
+        target_hidden_state_0 = tuple_h0_ctx_alpha_alpha_past_annotation[0]
+        alpha_past_one        = tuple_h0_ctx_alpha_alpha_past_annotation[3]
+        annotation_one        = tuple_h0_ctx_alpha_alpha_past_annotation[4]
+        a_mask                = tuple_h0_ctx_alpha_alpha_past_annotation[5]
+
+        emb_y, y_mask = tuple_emb_mask
+
+        emb_y_z_r_vector = tf.tensordot(emb_y, self.W_yz_yr, axes=1) + \
+        self.b_yz_yr                                            # [batch, 2 * dim_decoder]
+        hidden_z_r_vector = tf.tensordot(target_hidden_state_0,
+        self.U_hz_hr, axes=1)                                   # [batch, 2 * dim_decoder]
+        pre_z_r_vector = tf.sigmoid(emb_y_z_r_vector + \
+        hidden_z_r_vector)                                      # [batch, 2 * dim_decoder]
+
+        r1 = pre_z_r_vector[:, :self.hidden_dim]                # [batch, dim_decoder]
+        z1 = pre_z_r_vector[:, self.hidden_dim:]                # [batch, dim_decoder]
+
+        emb_y_h_vector = tf.tensordot(emb_y, self.W_yh, axes=1) + \
+        self.b_yh                                               # [batch, dim_decoder]
+        hidden_r_h_vector = tf.tensordot(target_hidden_state_0,
+        self.U_rh, axes=1)                                      # [batch, dim_decoder]
+        hidden_r_h_vector *= r1
+        pre_h_proposal = tf.tanh(hidden_r_h_vector + emb_y_h_vector)
+
+        pre_h = z1 * target_hidden_state_0 + (1. - z1) * pre_h_proposal
+
 def main(args):
     worddicts = load_dict(args.path + '/data/dictionary.txt')
     worddicts_r = [None] * len(worddicts)
