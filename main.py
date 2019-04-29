@@ -28,6 +28,11 @@ def conv_norm_weight(nin, nout, kernel_size):
     W = np.asarray(rng.uniform(low=-W_bound, high=W_bound, size=filter_shape), dtype=np.float32)
     return W.astype('float32')
 
+def ortho_weight(ndim):
+    W = np.random.randn(ndim, ndim)
+    u, s, v = np.linalg.svd(W)
+    return u.astype('float32')
+
 class Watcher_train():
     def __init__(self, blocks,             # number of dense blocks
                 level,                     # number of levels in each blocks
