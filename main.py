@@ -476,3 +476,14 @@ class Parser():
         self.b_rh_nl = tf.Variable(np.zeros((self.hidden_dim, )).astype('float32'), name='b_rh_nl')
 
         self.W_c_h_nl = tf.Variable(norm_weight(self.context_dim, self.hidden_dim), name='W_c_h_nl')
+
+    def get_ht_ctx(self, emb_y, target_hidden_state_0, annotations, a_m, y_m):
+
+        res = tf.scan(self.one_time_step, elems=(emb_y, y_m),
+            initializer=(target_hidden_state_0,
+                tf.zeros([tf.shape(annotations)[0], self.context_dim]),
+                tf.zeros([tf.shape(annotations)[0], tf.shape(annotations)[1], tf.shape(annotations)[2]]),
+                tf.zeros([tf.shape(annotations)[0], tf.shape(annotations)[1], tf.shape(annotations)[2]]),
+                annotations, a_m))
+
+        return res
