@@ -179,6 +179,47 @@ class Attender():
 
         self.alpha_past_filter = tf.Variable(conv_norm_weight(1, self.dim_attend, self.coverage_kernel), name='alpha_past_filter')
 
+    def get_context(self, annotation4ctx, h_t_1, alpha_past4ctx, a_mask):
+
+        #### calculate $U_f x f_i$ ####
+        alpha_past_4d = alpha_past4ctx[:, :, :, None]
+
+        Ft = tf.nn.conv2d(alpha_past_4d, filter=self.alpha_past_filter, strides=[1, 1, 1, 1], padding='SAME')
+
+        coverage_vector = tf.tensordot(Ft, self.U_f, axes=1) \
+        + self.U_f_b                                            # [batch, h, w, dim_attend]
+
+        #### calculate $U_a x a_i$ ####
+        watch_vector = tf.tensordot(annotation4ctx, self.U_a, axes=1) \
+        + self.U_a_b                                            # [batch, h, w, dim_attend]
+
+        #### calculate $W_a x h_{t - 1}$ ####
+        speller_vector = tf.tensordot(h_t_1, self.W_a, axes=1) \
+        + self.W_a_b                                            # [batch, dim_attend]
+        speller_vector = speller_vector[:, None, None, :]       # [batch, None, None, dim_attend]
+
+        tanh_vector = tf.tanh(
+            coverage_vector + watch_vector + speller_vector)    # [batch, h, w, dim_attend]
+
+        e_ti = tf.tensordot(tanh_vector, self.V_a, axes=1) + self.V_a_b  # [batch, h, w, 1]
+
+        alpha = tf.exp(e_ti)
+
+        alpha = tf.squeeze(alpha, axis=3)
+
+        if a_mask is not None:
+            alpha = alpha * a_mask
+
+        alpha = alpha / tf.reduce_sum(alpha, \
+            axis=[1, 2], keepdims=True)                         # normlized weights | [batch, h, w]
+
+        alpha_past4ctx += alpha                                 # accumalated weights matrix | [batch, h, w]
+
+        context = tf.reduce_sum(annotation4ctx * alpha[:, :, :, None], \
+            axis=[1, 2])                                        # context vector | [batch, feature_channels]
+
+        return context, alpha, alpha_past4ctx
+
 
 class WAP():
     def __init__(self, watcher, attender, parser, hidden_dim, word_dim, context_dim, target_dim, training):
@@ -408,4 +449,38 @@ class WAP():
                     sample_score.append(hyp_scores[idx])
 
         return sample, sample_score
-# wap_obj = WAP(None,None,None,1,1,1,1,False)
+
+class Parser():
+
+    def __init__(self, hidden_dim, word_dim, attender, context_dim):
+
+        self.attender = attender                                # inner-instance of Attender to provide context
+        self.context_dim = context_dim                          # context dime 684
+        self.hidden_dim = hidden_dim                            # dim of hidden state  256
+        self.word_dim = word_dim                                # dim of embedding word 256
+
+        self.W_yz_yr = tf.Variable(np.concatenate(
+            [norm_weight(self.word_dim, self.hidden_dim), norm_weight(self.word_dim, self.hidden_dim)], axis=1), name='W_yz_yr') # [dim_word, 2 * dim_decoder]
+        self.b_yz_yr = tf.Variable(np.zeros((2 * self.hidden_dim, )).astype('float32'), name='b_yz_yr')
+
+        self.U_hz_hr = tf.Variable(np.concatenate(
+            [ortho_weight(self.hidden_dim),ortho_weight(self.hidden_dim)], axis=1), name='U_hz_hr')                              # [dim_hidden, 2 * dim_hidden]
+
+        self.W_yh = tf.Variable(norm_weight(self.word_dim,
+            self.hidden_dim), name='W_yh')
+        self.b_yh = tf.Variable(np.zeros((self.hidden_dim, )).astype('float32'), name='b_yh')                                    # [dim_decoder, ]
+
+        self.U_rh = tf.Variable(ortho_weight(self.hidden_dim), name='U_rh')                                                      # [dim_hidden, dim_hidden]
+
+        self.U_hz_hr_nl = tf.Variable(np.concatenate(
+            [ortho_weight(self.hidden_dim), ortho_weight(self.hidden_dim)], axis=1), name='U_hz_hr_nl')                          # [dim_hidden, 2 * dim_hidden] non_linear
+
+        self.b_hz_hr_nl = tf.Variable(np.zeros((2 * self.hidden_dim, )).astype('float32'), name='b_hz_hr_nl')                    # [2 * dim_hidden, ]
+
+        self.W_c_z_r = tf.Variable(norm_weight(self.context_dim,
+            2 * self.hidden_dim), name='W_c_z_r')
+
+        self.U_rh_nl = tf.Variable(ortho_weight(self.hidden_dim), name='U_rh_nl')
+        self.b_rh_nl = tf.Variable(np.zeros((self.hidden_dim, )).astype('float32'), name='b_rh_nl')
+
+        self.W_c_h_nl = tf.Variable(norm_weight(self.context_dim, self.hidden_dim), name='W_c_h_nl')
