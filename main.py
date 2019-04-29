@@ -133,7 +133,13 @@ class Watcher_train():
                 x,dense_out,mask_x = self.transition_layer(x,mask_x)
 
         return mask_x ,dense_out
-      
+
+    def dense_net(self, input_x, mask_x):
+        #### before flowing into dense blocks ####
+        x,mask_x ,dense_out = self.before_dense_net(input_x, mask_x)
+        #### flowing into dense blocks and transition_layer ####
+        mask_x ,dense_out = self.DenseB_and_transition_layer(x,mask_x,dense_out)
+        return dense_out, mask_x  
       
 
 class Attender():
