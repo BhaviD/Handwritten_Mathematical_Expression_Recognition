@@ -541,9 +541,6 @@ class Parser():
         h_proposal = tf.tanh(emb_y_h_nl_vector + context_h_vector)
         h = z2 * pre_h + (1. - z2) * h_proposal
 
-        if y_mask is not None:
-            h = y_mask[:, None] * h + (1. - y_mask)[:, None] * pre_h
-
         return h, context, alpha, alpha_past_one, annotation_one, a_mask
 
 def main(args):
