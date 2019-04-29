@@ -564,6 +564,29 @@ def main(args):
 
     print('train length is ', len(train))
 
+    x = tf.placeholder(tf.float32, shape=[None, None, None, 1])
+
+    y = tf.placeholder(tf.int32, shape=[None, None])
+
+    x_mask = tf.placeholder(tf.float32, shape=[None, None, None])
+
+    y_mask = tf.placeholder(tf.float32, shape=[None, None])
+
+    lr = tf.placeholder(tf.float32, shape=())
+
+    if_trainning = tf.placeholder(tf.bool, shape=())
+
+    watcher_train = Watcher_train(blocks=3,level=16, growth_rate=24, training=if_trainning)
+
+    annotation, anno_mask = watcher_train.dense_net(x, x_mask)
+
+    # for initilaizing validation
+    anno = tf.placeholder(tf.float32, shape=[None, annotation.shape.as_list()[1], annotation.shape.as_list()[2], annotation.shape.as_list()[3]])
+    infer_y = tf.placeholder(tf.int64, shape=(None,))
+    h_pre = tf.placeholder(tf.float32, shape=[None, 256])
+    alpha_past = tf.placeholder(tf.float32, shape=[None, annotation.shape.as_list()[1], annotation.shape.as_list()[2]])
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
