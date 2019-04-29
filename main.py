@@ -524,6 +524,28 @@ class Parser():
 
         pre_h = z1 * target_hidden_state_0 + (1. - z1) * pre_h_proposal
 
+        if y_mask is not None:
+            pre_h = y_mask[:, None] * pre_h + (1. - y_mask)[:, None] * target_hidden_state_0
+
+        context, alpha, alpha_past_one = self.attender.get_context(annotation_one, pre_h, alpha_past_one, a_mask)  # [batch, dim_ctx]
+        emb_y_z_r_nl_vector = tf.tensordot(pre_h, self.U_hz_hr_nl, axes=1) + self.b_hz_hr_nl
+        context_z_r_vector = tf.tensordot(context, self.W_c_z_r, axes=1)
+        z_r_vector = tf.sigmoid(emb_y_z_r_nl_vector + context_z_r_vector)
+
+        r2 = z_r_vector[:, :self.hidden_dim]
+        z2 = z_r_vector[:, self.hidden_dim:]
+
+        emb_y_h_nl_vector = tf.tensordot(pre_h, self.U_rh_nl, axes=1) + self.b_rh_nl
+        emb_y_h_nl_vector *= r2
+        context_h_vector = tf.tensordot(context, self.W_c_h_nl, axes=1)
+        h_proposal = tf.tanh(emb_y_h_nl_vector + context_h_vector)
+        h = z2 * pre_h + (1. - z2) * h_proposal
+
+        if y_mask is not None:
+            h = y_mask[:, None] * h + (1. - y_mask)[:, None] * pre_h
+
+        return h, context, alpha, alpha_past_one, annotation_one, a_mask
+
 def main(args):
     worddicts = load_dict(args.path + '/data/dictionary.txt')
     worddicts_r = [None] * len(worddicts)
