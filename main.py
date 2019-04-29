@@ -524,6 +524,28 @@ class Parser():
 
         pre_h = z1 * target_hidden_state_0 + (1. - z1) * pre_h_proposal
 
+        if y_mask is not None:
+            pre_h = y_mask[:, None] * pre_h + (1. - y_mask)[:, None] * target_hidden_state_0
+
+        context, alpha, alpha_past_one = self.attender.get_context(annotation_one, pre_h, alpha_past_one, a_mask)  # [batch, dim_ctx]
+        emb_y_z_r_nl_vector = tf.tensordot(pre_h, self.U_hz_hr_nl, axes=1) + self.b_hz_hr_nl
+        context_z_r_vector = tf.tensordot(context, self.W_c_z_r, axes=1)
+        z_r_vector = tf.sigmoid(emb_y_z_r_nl_vector + context_z_r_vector)
+
+        r2 = z_r_vector[:, :self.hidden_dim]
+        z2 = z_r_vector[:, self.hidden_dim:]
+
+        emb_y_h_nl_vector = tf.tensordot(pre_h, self.U_rh_nl, axes=1) + self.b_rh_nl
+        emb_y_h_nl_vector *= r2
+        context_h_vector = tf.tensordot(context, self.W_c_h_nl, axes=1)
+        h_proposal = tf.tanh(emb_y_h_nl_vector + context_h_vector)
+        h = z2 * pre_h + (1. - z2) * h_proposal
+
+        if y_mask is not None:
+            h = y_mask[:, None] * h + (1. - y_mask)[:, None] * pre_h
+
+        return h, context, alpha, alpha_past_one, annotation_one, a_mask
+
 def main(args):
     worddicts = load_dict(args.path + '/data/dictionary.txt')
     worddicts_r = [None] * len(worddicts)
@@ -541,6 +563,182 @@ def main(args):
         maxlen=100, maxImagesize=400000)
 
     print('train length is ', len(train))
+
+    x = tf.placeholder(tf.float32, shape=[None, None, None, 1])
+
+    y = tf.placeholder(tf.int32, shape=[None, None])
+
+    x_mask = tf.placeholder(tf.float32, shape=[None, None, None])
+
+    y_mask = tf.placeholder(tf.float32, shape=[None, None])
+
+    lr = tf.placeholder(tf.float32, shape=())
+
+    if_trainning = tf.placeholder(tf.bool, shape=())
+
+    watcher_train = Watcher_train(blocks=3,level=16, growth_rate=24, training=if_trainning)
+
+    annotation, anno_mask = watcher_train.dense_net(x, x_mask)
+
+    # for initilaizing validation
+    anno = tf.placeholder(tf.float32, shape=[None, annotation.shape.as_list()[1], annotation.shape.as_list()[2], annotation.shape.as_list()[3]])
+    infer_y = tf.placeholder(tf.int64, shape=(None,))
+    h_pre = tf.placeholder(tf.float32, shape=[None, 256])
+    alpha_past = tf.placeholder(tf.float32, shape=[None, annotation.shape.as_list()[1], annotation.shape.as_list()[2]])
+
+    attender = Attender(annotation.shape.as_list()[3], 256, 512)
+
+    parser = Parser(256, 256, attender, annotation.shape.as_list()[3])
+
+    wap = WAP(watcher_train, attender, parser, 256, 256, annotation.shape.as_list()[3], 111, if_trainning)
+
+    hidden_state_0 = tf.tanh(tf.tensordot(tf.reduce_mean(anno, axis=[1, 2]), wap.Wa2h, axes=1) + wap.ba2h)  # [batch, hidden_dim]
+
+    cost = wap.get_cost(annotation, y, anno_mask, y_mask)
+
+    vs = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+
+    for vv in vs:
+        if not vv.name.startswith('batch_normalization'):
+            cost += 1e-4 * tf.reduce_sum(tf.pow(vv, 2))
+
+    p, w, h, alpha = wap.get_word(infer_y, h_pre, alpha_past, anno)
+
+    optimizer = tf.train.AdadeltaOptimizer(learning_rate=lr)
+
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
+    with tf.control_dependencies(update_ops):
+        trainer = optimizer.minimize(cost)
+
+    max_epoch = 200
+
+    config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
+
+    config.gpu_options.allow_growth=True
+
+    init = tf.global_variables_initializer()
+
+    uidx = 0
+    cost_s = 0
+    dispFreq = 1
+    saveFreq = len(train)
+    sampleFreq = len(train)
+    validFreq = len(train)
+    history_errs = []
+    estop = False
+    halfLrFlag = 0
+    patience = 15
+    lrate = 1.0
+    log = open(args.path + '/log-bs-6.txt', 'w')
+
+    with tf.Session(config=config) as sess:
+        sess.run(init)
+        for epoch in range(max_epoch):
+            n_samples = 0
+            random.shuffle(train)
+            for batch_x, batch_y in train:
+                batch_x, batch_x_m, batch_y, batch_y_m = prepare_data(batch_x, batch_y)
+                n_samples += len(batch_x)
+                uidx += 1
+
+                cost_i, _ = sess.run([cost, trainer],
+                    feed_dict={x:batch_x, y:batch_y, x_mask:batch_x_m, y_mask:batch_y_m, if_trainning:True, lr:lrate})
+
+                cost_s += cost_i
+
+                if np.isnan(cost_i) or np.isinf(cost_i):
+                    print('invalid cost value detected')
+                    sys.exit(0)
+
+
+                if np.mod(uidx, dispFreq) == 0:
+                    cost_s /= dispFreq
+                    print('Epoch ', epoch, 'Update ', uidx, 'Cost ', cost_s, 'Lr ', lrate)
+                    log.write('Epoch ' + str(epoch) + ' Update ' + str(uidx) + ' Cost ' + str(cost_s) + ' Lr ' + str(lrate) + '\n')
+                    log.flush()
+                    cost_s = 0
+
+
+                if np.mod(uidx, sampleFreq) == 0:
+                    fpp_sample = open(args.path + '/result/valid_decode_result-bs-6.txt', 'w')
+                    valid_count_idx = 0
+                    for batch_x, batch_y in valid:
+                        for xx in batch_x:
+                            xx = np.moveaxis(xx, 0, -1)
+                            xx_pad = np.zeros((xx.shape[0], xx.shape[1], xx.shape[2]), dtype='float32')
+                            xx_pad[:,:, :] = xx / 255.
+                            xx_pad = xx_pad[None, :, :, :]
+                            annot = sess.run(annotation, feed_dict={x:xx_pad, if_trainning:False})
+                            h_state = sess.run(hidden_state_0, feed_dict={anno:annot})
+                            sample, score = wap.get_sample(anno, infer_y, h_pre, alpha_past, if_trainning, p, w, h, alpha, annot, h_state,
+                             10, 100, False, sess, training=False)
+                            score = score / np.array([len(s) for s in sample])
+                            ss = sample[score.argmin()]
+                            fpp_sample.write(valid_uid_list[valid_count_idx])
+                            valid_count_idx=valid_count_idx+1
+                            if np.mod(valid_count_idx, 10) == 0:
+                                print('gen %d samples'%valid_count_idx)
+                                log.write('gen %d samples'%valid_count_idx + '\n')
+                                log.flush()
+                            for vv in ss:
+                                if vv == 0: # <eol>
+                                    break
+                                fpp_sample.write(' '+worddicts_r[vv])
+                            fpp_sample.write('\n')
+                    fpp_sample.close()
+                    print('valid set decode done')
+                    log.write('valid set decode done\n')
+                    log.flush()
+
+
+                if np.mod(uidx, validFreq) == 0:
+                    probs = []
+                    for batch_x, batch_y in valid:
+                        batch_x, batch_x_m, batch_y, batch_y_m = prepare_data(batch_x, batch_y)
+                        pprobs, annot = sess.run([cost, annotation], feed_dict={x:batch_x, y:batch_y, x_mask:batch_x_m, y_mask:batch_y_m, if_trainning:False})
+                        probs.append(pprobs)
+                    valid_errs = np.array(probs)
+                    valid_err_cost = valid_errs.mean()
+                    print("reached here")
+#                     os.system('python2 compute-wer.py ' + args.path + '/result/valid_decode_result-bs-6.txt' + ' ' + args.path + '/data/test_caption.txt' + ' ' + args.path + '/result/valid-bs-6.wer')
+                    process(args.path + '/result/valid_decode_result-bs-6.txt', args.path + '/data/test_caption.txt', args.path + '/result/valid-bs-6.wer')
+                    fpp=open(args.path + '/result/valid-bs-6.wer')
+                    stuff=fpp.readlines()
+                    fpp.close()
+                    m=re.search('WER (.*)\n',stuff[0])
+                    valid_per=100. * float(m.group(1))
+                    m=re.search('ExpRate (.*)\n',stuff[1])
+                    valid_sacc=100. * float(m.group(1))
+                    valid_err=valid_per
+
+                    history_errs.append(valid_err)
+
+                    if uidx/validFreq == 0 or valid_err <= np.array(history_errs).min():
+                        bad_counter = 0
+
+                    if uidx/validFreq != 0 and valid_err > np.array(history_errs).min():
+                        bad_counter += 1
+                        if bad_counter > patience:
+                            if halfLrFlag==2:
+                                print('Early Stop!')
+                                log.write('Early Stop!\n')
+                                log.flush()
+                                estop = True
+                                break
+                            else:
+                                print('Lr decay and retrain!')
+                                log.write('Lr decay and retrain!\n')
+                                log.flush()
+                                bad_counter = 0
+                                lrate = lrate / 10
+                                halfLrFlag += 1
+
+                    print('Valid WER: %.2f%%, ExpRate: %.2f%%, Cost: %f' % (valid_per,valid_sacc,valid_err_cost))
+                    log.write('Valid WER: %.2f%%, ExpRate: %.2f%%, Cost: %f' % (valid_per,valid_sacc,valid_err_cost) + '\n')
+                    log.flush()
+            if estop:
+                break
 
 
 if __name__ == "__main__":
