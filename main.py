@@ -495,3 +495,21 @@ class Parser():
                 annotations, a_m))
 
         return res
+
+def main(args):
+    worddicts = load_dict(args.path + '/data/dictionary.txt')
+    worddicts_r = [None] * len(worddicts)
+    for kk, vv in worddicts.items():
+        worddicts_r[vv] = kk
+
+    #ipdb.set_trace()
+    train, train_uid_list = dataIterator(args.path + '/data/offline-train.pkl', args.path + '/data/train_caption.txt', worddicts,
+        batch_size=args.batch_size, batch_Imagesize=400000,
+        maxlen=100, maxImagesize=400000)
+    
+    #ipdb.set_trace()
+    valid, valid_uid_list = dataIterator(args.path +  '/data/offline-test.pkl', args.path + '/data/test_caption.txt', worddicts,
+        batch_size=args.batch_size, batch_Imagesize=400000,
+        maxlen=100, maxImagesize=400000)
+
+    print('train length is ', len(train))

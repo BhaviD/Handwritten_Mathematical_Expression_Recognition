@@ -82,3 +82,15 @@ def dataIterator(feature_file,label_file,dictionary,batch_size,batch_Imagesize,m
     print('total ',len(feature_total), 'batch data loaded')
 
     return list(zip(feature_total,label_total)),uidList
+
+def load_dict(dictFile):
+    fp=open(dictFile)
+    stuff=fp.readlines()
+    fp.close()
+    lexicon={}
+    for l in stuff:
+        w=l.strip().split()
+        lexicon[w[0]]=int(w[1])
+
+    print('total words/phones',len(lexicon))
+    return lexicon
