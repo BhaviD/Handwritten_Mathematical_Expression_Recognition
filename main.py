@@ -441,4 +441,38 @@ class WAP():
                     sample_score.append(hyp_scores[idx])
 
         return sample, sample_score
-# wap_obj = WAP(None,None,None,1,1,1,1,False)
+
+class Parser():
+
+    def __init__(self, hidden_dim, word_dim, attender, context_dim):
+
+        self.attender = attender                                # inner-instance of Attender to provide context
+        self.context_dim = context_dim                          # context dime 684
+        self.hidden_dim = hidden_dim                            # dim of hidden state  256
+        self.word_dim = word_dim                                # dim of embedding word 256
+
+        self.W_yz_yr = tf.Variable(np.concatenate(
+            [norm_weight(self.word_dim, self.hidden_dim), norm_weight(self.word_dim, self.hidden_dim)], axis=1), name='W_yz_yr') # [dim_word, 2 * dim_decoder]
+        self.b_yz_yr = tf.Variable(np.zeros((2 * self.hidden_dim, )).astype('float32'), name='b_yz_yr')
+
+        self.U_hz_hr = tf.Variable(np.concatenate(
+            [ortho_weight(self.hidden_dim),ortho_weight(self.hidden_dim)], axis=1), name='U_hz_hr')                              # [dim_hidden, 2 * dim_hidden]
+
+        self.W_yh = tf.Variable(norm_weight(self.word_dim,
+            self.hidden_dim), name='W_yh')
+        self.b_yh = tf.Variable(np.zeros((self.hidden_dim, )).astype('float32'), name='b_yh')                                    # [dim_decoder, ]
+
+        self.U_rh = tf.Variable(ortho_weight(self.hidden_dim), name='U_rh')                                                      # [dim_hidden, dim_hidden]
+
+        self.U_hz_hr_nl = tf.Variable(np.concatenate(
+            [ortho_weight(self.hidden_dim), ortho_weight(self.hidden_dim)], axis=1), name='U_hz_hr_nl')                          # [dim_hidden, 2 * dim_hidden] non_linear
+
+        self.b_hz_hr_nl = tf.Variable(np.zeros((2 * self.hidden_dim, )).astype('float32'), name='b_hz_hr_nl')                    # [2 * dim_hidden, ]
+
+        self.W_c_z_r = tf.Variable(norm_weight(self.context_dim,
+            2 * self.hidden_dim), name='W_c_z_r')
+
+        self.U_rh_nl = tf.Variable(ortho_weight(self.hidden_dim), name='U_rh_nl')
+        self.b_rh_nl = tf.Variable(np.zeros((self.hidden_dim, )).astype('float32'), name='b_rh_nl')
+
+        self.W_c_h_nl = tf.Variable(norm_weight(self.context_dim, self.hidden_dim), name='W_c_h_nl')
