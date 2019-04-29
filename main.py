@@ -292,4 +292,106 @@ class WAP():
         cost = tf.reduce_mean(cost)
         return cost
 
+
+    def get_sample(self, p, w, h, alpha, ctx0, h_0, k , maxlen, stochastic, session, training):
+
+        sample = []
+        sample_score = []
+
+        live_k = 1
+        dead_k = 0
+
+        hyp_samples = [[]] * live_k
+        hyp_scores = np.zeros(live_k).astype('float32')
+        hyp_states = []
+
+
+        next_alpha_past = np.zeros((ctx0.shape[0], ctx0.shape[1], ctx0.shape[2])).astype('float32')
+        emb_0 = np.zeros((ctx0.shape[0], 256))
+
+        next_w = -1 * np.ones((1,)).astype('int64')
+
+        next_state = h_0
+        for ii in range(maxlen):
+
+            ctx = np.tile(ctx0, [live_k, 1, 1, 1])
+
+            input_dict = {
+            anno:ctx,
+            infer_y:next_w,
+            alpha_past:next_alpha_past,
+            h_pre:next_state,
+            if_trainning:training
+            }
+
+            next_p, next_w, next_state, next_alpha_past = session.run([p, w, h, alpha], feed_dict=input_dict)
+
+            if stochastic:
+                if argmax:
+                    nw = next_p[0].argmax()
+                else:
+                    nw = next_w[0]
+                sample.append(nw)
+                sample_score += next_p[0, nw]
+                if nw == 0:
+                    break
+            else:
+                cand_scores = hyp_scores[:, None] - np.log(next_p)
+                cand_flat = cand_scores.flatten()
+                ranks_flat = cand_flat.argsort()[:(k-dead_k)]
+                voc_size = next_p.shape[1]
+
+                assert voc_size==111
+
+                trans_indices = ranks_flat // voc_size
+                word_indices = ranks_flat % voc_size
+                costs = cand_flat[ranks_flat]
+                new_hyp_samples = []
+                new_hyp_scores = np.zeros(k-dead_k).astype('float32')
+                new_hyp_states = []
+                new_hyp_alpha_past = []
+
+                for idx, [ti, wi] in enumerate(zip(trans_indices, word_indices)):
+                    new_hyp_samples.append(hyp_samples[ti]+[wi])
+                    new_hyp_scores[idx] = copy.copy(costs[idx])
+                    new_hyp_states.append(copy.copy(next_state[ti]))
+                    new_hyp_alpha_past.append(copy.copy(next_alpha_past[ti]))
+
+                new_live_k = 0
+                hyp_samples = []
+                hyp_scores = []
+                hyp_states = []
+                hyp_alpha_past = []
+
+                for idx in range(len(new_hyp_samples)):
+                    if new_hyp_samples[idx][-1] == 0: # <eol>
+                        sample.append(new_hyp_samples[idx])
+                        sample_score.append(new_hyp_scores[idx])
+                        dead_k += 1
+                    else:
+                        new_live_k += 1
+                        hyp_samples.append(new_hyp_samples[idx])
+                        hyp_scores.append(new_hyp_scores[idx])
+                        hyp_states.append(new_hyp_states[idx])
+                        hyp_alpha_past.append(new_hyp_alpha_past[idx])
+                hyp_scores = np.array(hyp_scores)
+                live_k = new_live_k
+
+                if new_live_k < 1:
+                    break
+                if dead_k >= k:
+                    break
+
+                next_w = np.array([w[-1] for w in hyp_samples])
+                next_state = np.array(hyp_states)
+                next_alpha_past = np.array(hyp_alpha_past)
+
+        if not stochastic:
+            # dump every remaining one
+            if live_k > 0:
+                for idx in range(live_k):
+                    sample.append(hyp_samples[idx])
+                    sample_score.append(hyp_scores[idx])
+
+        return sample, sample_score
 # wap_obj = WAP(None,None,None,1,1,1,1,False)
