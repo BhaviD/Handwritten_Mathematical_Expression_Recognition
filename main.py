@@ -586,6 +586,51 @@ def main(args):
     h_pre = tf.placeholder(tf.float32, shape=[None, 256])
     alpha_past = tf.placeholder(tf.float32, shape=[None, annotation.shape.as_list()[1], annotation.shape.as_list()[2]])
 
+    attender = Attender(annotation.shape.as_list()[3], 256, 512)
+
+    parser = Parser(256, 256, attender, annotation.shape.as_list()[3])
+
+    wap = WAP(watcher_train, attender, parser, 256, 256, annotation.shape.as_list()[3], 111, if_trainning)
+
+    hidden_state_0 = tf.tanh(tf.tensordot(tf.reduce_mean(anno, axis=[1, 2]), wap.Wa2h, axes=1) + wap.ba2h)  # [batch, hidden_dim]
+
+    cost = wap.get_cost(annotation, y, anno_mask, y_mask)
+
+    vs = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+
+    for vv in vs:
+        if not vv.name.startswith('batch_normalization'):
+            cost += 1e-4 * tf.reduce_sum(tf.pow(vv, 2))
+
+    p, w, h, alpha = wap.get_word(infer_y, h_pre, alpha_past, anno)
+
+    optimizer = tf.train.AdadeltaOptimizer(learning_rate=lr)
+
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
+    with tf.control_dependencies(update_ops):
+        trainer = optimizer.minimize(cost)
+
+    max_epoch = 200
+
+    config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=True)
+
+    config.gpu_options.allow_growth=True
+
+    init = tf.global_variables_initializer()
+
+    uidx = 0
+    cost_s = 0
+    dispFreq = 1
+    saveFreq = len(train)
+    sampleFreq = len(train)
+    validFreq = len(train)
+    history_errs = []
+    estop = False
+    halfLrFlag = 0
+    patience = 15
+    lrate = 1.0
+    log = open(args.path + '/log-bs-6.txt', 'w')
 
 
 if __name__ == "__main__":
